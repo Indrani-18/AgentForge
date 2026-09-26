@@ -1,173 +1,158 @@
 "use strict";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = "http://localhost:8000";
 
-const input = document.getElementById("questionInput");
-const sendButton = document.getElementById("sendButton");
-const chat = document.getElementById("chat");
+document.addEventListener("DOMContentLoaded", () => {
+    const questionInput = document.getElementById("question");
+    const sendButton = document.getElementById("send-btn");
+    const chatBox = document.getElementById("chat-box");
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
 
-let isSubmitting = false;
-
-function hideWelcomeContent() {
-    const welcome = document.getElementById("welcome");
-    const suggestions = document.getElementById("suggestions");
-
-    if (welcome) welcome.style.display = "none";
-    if (suggestions) suggestions.style.display = "none";
-}
-
-function scrollChatToBottom() {
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function addMessage(text, role) {
-    hideWelcomeContent();
-
-    const message = document.createElement("div");
-    message.className = `message ${role}`;
-
-    const icon = document.createElement("div");
-    icon.className = "message-icon";
-    icon.textContent = role === "assistant" ? "🤖" : "👤";
-
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-
-    // textContent safely displays the backend answer as text.
-    bubble.textContent = String(text ?? "");
-
-    if (role === "assistant") {
-        message.append(icon, bubble);
-    } else {
-        message.append(bubble, icon);
-    }
-
-    chat.appendChild(message);
-    scrollChatToBottom();
-
-    return message;
-}
-
-function addLoading() {
-    const message = document.createElement("div");
-    message.className = "message assistant";
-    message.id = "loadingMessage";
-
-    const icon = document.createElement("div");
-    icon.className = "message-icon";
-    icon.textContent = "🤖";
-
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-
-    const typing = document.createElement("div");
-    typing.className = "typing";
-
-    for (let i = 0; i < 3; i++) {
-        typing.appendChild(document.createElement("span"));
-    }
-
-    bubble.appendChild(typing);
-    message.append(icon, bubble);
-    chat.appendChild(message);
-
-    scrollChatToBottom();
-}
-
-function removeLoading() {
-    document.getElementById("loadingMessage")?.remove();
-}
-
-async function sendQuestion() {
-    const question = input.value.trim();
-
-    if (!question || isSubmitting) {
+    if (!questionInput || !sendButton || !chatBox) {
+        console.error("Frontend setup error: required HTML elements were not found.");
         return;
     }
 
-    isSubmitting = true;
-    sendButton.disabled = true;
-    input.disabled = true;
+    function addMessage(text, sender) {
+        const message = document.createElement("div");
+        message.className = sender === "user"
+            ? "message user-message"
+            : "message assistant-message";
 
-    addMessage(question, "user");
-    input.value = "";
-    input.style.height = "42px";
+        const avatar = document.createElement("div");
+        avatar.className = "message-avatar";
+        avatar.textContent = sender === "user" ? "👤" : "🤖";
 
-    addLoading();
+        const content = document.createElement("div");
+        content.className = "message-content";
 
-    try {
-        const response = await fetch(`${API_URL}/ask`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            },
-            body: JSON.stringify({ question })
-        });
+        const name = document.createElement("div");
+        name.className = "message-name";
+        name.textContent = sender === "user" ? "You" : "AgentForge";
 
-        let data;
+        const messageText = document.createElement("div");
+        messageText.className = "message-text";
 
-        try {
-            data = await response.json();
-        } catch {
-            throw new Error("The server did not return valid JSON.");
+        // Safe display of backend text
+        messageText.textContent = String(text ?? "");
+
+        content.append(name, messageText);
+        message.append(avatar, content);
+        chatBox.appendChild(message);
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        return message;
+    }
+
+    async function sendQuestion() {
+        const question = questionInput.value.trim();
+
+        if (!question || sendButton.disabled) {
+            return;
         }
 
-        console.log("Backend response:", data);
-        removeLoading();
+        addMessage(question, "user");
 
-        if (response.ok && data.success === true) {
-            addMessage(
-                data.answer || "AgentForge returned an empty answer.",
-                "assistant"
-            );
-        } else {
-            addMessage(
-                data.answer ||
-                data.detail ||
-                data.error ||
-                "AgentForge could not answer this question.",
-                "assistant"
-            );
-        }
-    } catch (error) {
-        console.error("AgentForge frontend error:", error);
-        removeLoading();
+        questionInput.value = "";
+        questionInput.disabled = true;
+        sendButton.disabled = true;
+        sendButton.textContent = "Thinking...";
 
-        addMessage(
-            "Unable to connect to AgentForge. Make sure FastAPI is running at http://127.0.0.1:8000.",
+        const loadingMessage = addMessage(
+            "AgentForge is thinking...",
             "assistant"
         );
-    } finally {
-        isSubmitting = false;
-        sendButton.disabled = false;
-        input.disabled = false;
-        input.focus();
+
+        try {
+            const response = await fetch(`${API_URL}/ask`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    question: question
+                })
+            });
+
+            let data;
+
+            try {
+                data = await response.json();
+            } catch {
+                throw new Error("The API returned an invalid response.");
+            }
+
+            loadingMessage.remove();
+
+            addMessage(
+                data.success
+                    ? (data.answer || "AgentForge returned an empty answer.")
+                    : (data.answer || "Something went wrong."),
+                "assistant"
+            );
+
+        } catch (error) {
+            console.error("AgentForge request error:", error);
+
+            loadingMessage.remove();
+
+            addMessage(
+                "Could not connect to AgentForge. Please make sure FastAPI is running on port 8000.",
+                "assistant"
+            );
+
+        } finally {
+            questionInput.disabled = false;
+            sendButton.disabled = false;
+            sendButton.textContent = "Send";
+            questionInput.focus();
+        }
     }
-}
 
-function useSuggestion(text) {
-    if (isSubmitting) return;
+    async function checkAPI() {
+        try {
+            const response = await fetch(`${API_URL}/health`);
 
-    input.value = text;
-    sendQuestion();
-}
+            if (!response.ok) {
+                throw new Error("API unavailable");
+            }
 
-function newConversation() {
-    if (isSubmitting) return;
+            if (statusDot) {
+                statusDot.className = "status-dot online";
+            }
 
-    // Reloading the page cleanly restores the welcome screen and suggestions.
-    window.location.reload();
-}
+            if (statusText) {
+                statusText.textContent = "API Connected";
+            }
 
-input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        sendQuestion();
+        } catch (error) {
+            console.error("API health check failed:", error);
+
+            if (statusDot) {
+                statusDot.className = "status-dot offline";
+            }
+
+            if (statusText) {
+                statusText.textContent = "API Offline";
+            }
+        }
     }
-});
 
-input.addEventListener("input", function () {
-    this.style.height = "42px";
-    this.style.height = `${Math.min(this.scrollHeight, 130)}px`;
+    window.setQuestion = function (question) {
+        questionInput.value = question;
+        questionInput.focus();
+    };
+
+    sendButton.addEventListener("click", sendQuestion);
+
+    questionInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            sendQuestion();
+        }
+    });
+
+    checkAPI();
 });

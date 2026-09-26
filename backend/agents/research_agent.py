@@ -6,105 +6,87 @@ from groq import Groq
 from backend.tools.web.search_tool import WebSearchTool
 
 
-# Load variables from .env
 load_dotenv()
 
 
 class ResearchAgent:
     """
-    Research Agent of AgentForge.
-
-    It:
-    1. Receives a research question.
-    2. Searches the web.
-    3. Sends search results to Groq.
-    4. Generates a final answer.
+    Searches the web when possible, then uses Groq
+    to create a clear final answer.
     """
 
     def __init__(self):
-        # Get Groq API key
         api_key = os.getenv("GROQ_API_KEY")
 
         if not api_key:
-            raise ValueError(
-                "GROQ_API_KEY not found.\n"
-                "Please add GROQ_API_KEY=your_api_key "
-                "to the .env file."
-            )
+            raise ValueError("GROQ_API_KEY is missing.")
 
-        # Create Groq client
-        self.client = Groq(
-            api_key=api_key
-        )
+        self.client = Groq(api_key=api_key)
 
-        # Groq model
         self.model = os.getenv(
             "GROQ_MODEL",
             "openai/gpt-oss-20b"
         )
 
-        # Create web search tool
-        self.web_search = WebSearchTool(
-            max_results=5
-        )
+        self.web_search = None
 
-    def search_web(self, question):
-        """
-        Search the web for the user's question.
-        """
-
+        # Web search is optional. Groq can still answer
+        # general questions if Tavily is unavailable.
         try:
-            search_results = self.web_search.search(
-                question
+            self.web_search = WebSearchTool(max_results=5)
+            print("Web Search          : READY")
+
+        except Exception as error:
+            print(f"Web Search          : UNAVAILABLE ({error})")
+
+    def search_web(self, question: str) -> str:
+        if not self.web_search:
+            return (
+                "Web search is currently unavailable. "
+                "Do not claim that current information was verified."
             )
 
+        try:
+            search_results = self.web_search.search(question)
+
             if not search_results:
-                return "No search results found."
+                return (
+                    "No web-search results were found. "
+                    "Do not invent facts."
+                )
 
-            return search_results
+            return str(search_results)
 
-        except Exception as e:
-            print("\nWeb Search Error:")
-            print(str(e))
+        except Exception as error:
+            print(f"Web Search Error: {error}")
 
             return (
                 "Web search could not be completed. "
-                "Please answer using general knowledge."
+                "Do not claim that current information was verified."
             )
 
-    def research(self, question):
-        """
-        Main research workflow.
-        """
-
-        # Check empty question
+    def research(self, question: str) -> str:
         if not question or not question.strip():
             return "Please enter a research question."
 
         question = question.strip()
 
-        # Step 1: Search the web
         print("\nSearching the web...")
+        search_results = self.search_web(question)
 
-        search_results = self.search_web(
-            question
-        )
-
-        # Step 2: Create prompt for Groq
         prompt = f"""
 You are the Research Agent of AgentForge.
 
-Your job is to answer questions clearly and accurately.
+Answer the user's question clearly and accurately.
 
 Instructions:
 - Give a direct answer first.
-- Use the web-search results provided below.
-- Explain important concepts.
-- Use simple language when possible.
-- Give examples when useful.
+- Use the web-search results when they are available.
+- Do not invent facts, sources, or current events.
+- If web search was unavailable, clearly say that you could not verify current information.
+- Use simple language.
+- Add examples when useful.
 - Organize longer answers with headings and bullet points.
-- Do not invent facts.
-- If the search results are insufficient, say so clearly.
 - Do not mention internal AgentForge implementation details.
 
 User question:
@@ -117,7 +99,6 @@ Now provide the final answer.
 """
 
         try:
-            # Step 3: Send request to Groq
             print("Generating answer with Groq...")
 
             response = self.client.chat.completions.create(
@@ -126,8 +107,7 @@ Now provide the final answer.
                     {
                         "role": "system",
                         "content": (
-                            "You are a helpful and accurate "
-                            "research assistant."
+                            "You are a helpful, accurate research assistant."
                         )
                     },
                     {
@@ -139,94 +119,53 @@ Now provide the final answer.
                 max_tokens=2048
             )
 
-            # Step 4: Extract answer
             answer = response.choices[0].message.content
 
-            if not answer:
+            if not answer or not answer.strip():
                 return (
-                    "The Research Agent received "
-                    "an empty response."
+                    "I could not generate an answer right now. "
+                    "Please try again."
                 )
 
             return answer.strip()
 
-        except Exception as e:
-            error_message = str(e)
+        except Exception as error:
+            error_message = str(error).lower()
+            print(f"Research Agent Error: {error}")
 
-            print("\nResearch Agent Error:")
-            print(error_message)
-
-            # Handle rate limit
-            if "429" in error_message:
+            if "429" in error_message or "rate limit" in error_message:
                 return (
-                    "Groq API rate limit reached. "
+                    "The AI service is busy right now. "
                     "Please wait a moment and try again."
                 )
 
-            # Handle authentication error
             if (
                 "401" in error_message
-                or "authentication" in error_message.lower()
-                or "invalid api key" in error_message.lower()
+                or "authentication" in error_message
+                or "invalid api key" in error_message
             ):
                 return (
-                    "Groq API authentication failed. "
-                    "Please check your GROQ_API_KEY "
-                    "in the .env file."
+                    "The AI service could not be authenticated. "
+                    "Please check the API configuration."
                 )
 
-            # Handle other errors
+            if (
+                "connection" in error_message
+                or "timeout" in error_message
+                or "network" in error_message
+            ):
+                return (
+                    "A network problem prevented the research request. "
+                    "Please check your connection and try again."
+                )
+
             return (
-                f"Research Agent Error: {error_message}"
+                "The Research Agent could not complete that request right now. "
+                "Please try again."
             )
 
-    def run(self, question):
-        """
-        Alias for the main research method.
-        """
-
+    def run(self, question: str) -> str:
         return self.research(question)
 
-    def __call__(self, question):
-        """
-        Allows this agent to be called like a function.
-        """
-
+    def __call__(self, question: str) -> str:
         return self.research(question)
-
-
-# ---------------------------------------------------------
-# Standalone testing
-# ---------------------------------------------------------
-
-if __name__ == "__main__":
-
-    print("=" * 60)
-    print("       AGENTFORGE - RESEARCH AGENT")
-    print("=" * 60)
-
-    try:
-        # Create agent
-        agent = ResearchAgent()
-
-        # Get question
-        question = input(
-            "\nEnter your research question: "
-        ).strip()
-
-        # Run research
-        print("\nResearch Agent is working...\n")
-
-        result = agent.research(
-            question
-        )
-
-        print("=" * 60)
-        print("RESEARCH RESULT")
-        print("=" * 60)
-
-        print(result)
-
-    except Exception as e:
-        print("\nSYSTEM ERROR:")
-        print(e)

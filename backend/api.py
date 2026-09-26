@@ -5,6 +5,10 @@ from pydantic import BaseModel
 from backend.orchestrator.orchestrator import Orchestrator
 
 
+# ==========================================
+# FastAPI Application
+# ==========================================
+
 app = FastAPI(
     title="AgentForge API",
     description="Multi-Agent AI System",
@@ -12,10 +16,15 @@ app = FastAPI(
 )
 
 
+# ==========================================
+# CORS Configuration
+# ==========================================
+
 origins = [
-    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5500",
     "http://localhost:5500",
 ]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,12 +35,24 @@ app.add_middleware(
 )
 
 
+# ==========================================
+# Initialize Orchestrator
+# ==========================================
+
 orchestrator = Orchestrator()
 
+
+# ==========================================
+# Request Model
+# ==========================================
 
 class QuestionRequest(BaseModel):
     question: str
 
+
+# ==========================================
+# Home Route
+# ==========================================
 
 @app.get("/")
 def home():
@@ -42,6 +63,10 @@ def home():
     }
 
 
+# ==========================================
+# Health Check
+# ==========================================
+
 @app.get("/health")
 def health():
     return {
@@ -50,6 +75,10 @@ def health():
         "service": "AgentForge"
     }
 
+
+# ==========================================
+# API Information
+# ==========================================
 
 @app.get("/info")
 def info():
@@ -61,11 +90,18 @@ def info():
     }
 
 
+# ==========================================
+# Ask AgentForge
+# ==========================================
+
 @app.post("/ask")
 def ask_question(request: QuestionRequest):
+
     try:
+
         question = request.question.strip()
 
+        # Empty question check
         if not question:
             return {
                 "success": False,
@@ -73,6 +109,7 @@ def ask_question(request: QuestionRequest):
                 "answer": "Please enter a question."
             }
 
+        # Send question to Orchestrator
         answer = orchestrator.run(question)
 
         return {
@@ -82,8 +119,9 @@ def ask_question(request: QuestionRequest):
         }
 
     except Exception as error:
+
         print("========================================")
-        print("AGENTFORGE ERROR")
+        print("AGENTFORGE API ERROR")
         print("========================================")
         print(str(error))
         print("========================================")
@@ -91,5 +129,8 @@ def ask_question(request: QuestionRequest):
         return {
             "success": False,
             "question": request.question,
-            "answer": f"Error: {str(error)}"
+            "answer": (
+                "AgentForge encountered an unexpected problem. "
+                "Please try again in a moment."
+            )
         }

@@ -45,7 +45,7 @@ class ResearchAgent:
         # Web search is optional. Groq can still answer
         # general questions if Tavily is unavailable.
         try:
-            self.web_search = WebSearchTool(max_results=5)
+            self.web_search = WebSearchTool(max_results=3)
             print("Web Search          : READY")
 
         except Exception as error:
@@ -175,6 +175,12 @@ User question:
 So far you have done this:
 {scratchpad if scratchpad else "(nothing yet)"}
 
+Important: if you have not searched yet, and the question involves
+anything current, recent, or time-sensitive (prices, versions, dates,
+news, events, releases), you do NOT already know the answer reliably.
+Search first -- do not FINISH before at least one search on this kind
+of question.
+
 Decide the SINGLE next step. Reply in EXACTLY this format, nothing else:
 
 Thought: <one or two sentences about what you know and what is missing>
@@ -231,6 +237,18 @@ Action: FINISH
 
             thought, action_type, query = self._parse_action(raw_response)
 
+            if action_type == "FINISH" and not scratchpad_steps:
+                # The model decided it already knows enough without ever
+                # searching -- for a Research Agent that defeats the
+                # purpose, so force at least one search before FINISH
+                # is honoured. Fall back to the raw question as the
+                # search query.
+                print(
+                    "\n[Iteration 1] Model tried to FINISH with no search "
+                    "yet -- forcing one search first."
+                )
+                action_type, query = "SEARCH", question
+
             print(f"\n[Iteration {iteration}]")
             print(f"Thought: {thought}")
 
@@ -241,6 +259,15 @@ Action: FINISH
             print(f"Action: SEARCH[{query}]")
 
             observation = self.search_web(query)
+
+            # Truncate before storing, not just before printing -- the
+            # full scratchpad gets resent to Groq on every subsequent
+            # call, so untruncated observations compound fast and can
+            # trip rate limits by iteration 2 or 3.
+            MAX_OBSERVATION_CHARS = 1200
+            if len(observation) > MAX_OBSERVATION_CHARS:
+                observation = observation[:MAX_OBSERVATION_CHARS] + " ...(truncated)"
+
             print(f"Observation: {observation[:300]}{'...' if len(observation) > 300 else ''}")
 
             scratchpad_steps.append(

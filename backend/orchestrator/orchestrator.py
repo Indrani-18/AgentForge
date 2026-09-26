@@ -538,7 +538,7 @@ class Orchestrator:
 
         arithmetic_pattern = (
 
-            r"\d+\s\*[\\+\\-\\\*\\/x×]\s\*\d+"
+            r"\d+\s*[+\-*/x×]\s*\d+"
 
         )
 

@@ -11,6 +11,7 @@ though the libraries are listed as dependencies.
 
 1. A question comes in through the FastAPI `/ask` endpoint.
 2. The **Orchestrator** decides whether the question needs a single agent or
+2. The **Orchestrator** decides whether the question needs a single agent or
    a multi-step plan (via keyword rules and the **Planner Agent**).
 3. For multi-step questions, the **Planner Agent** breaks the request into
    tasks with dependencies, which are represented as a **Workflow Graph**.

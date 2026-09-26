@@ -81,60 +81,85 @@ class ResearchAgent:
                 "Do not claim that current information was verified."
             )
 
-    def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+    def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int, retries: int = 2) -> str:
         """
         Shared Groq call used by both the reasoning step and the
         final-answer step, with the same error handling as before.
+
+        Some models (gpt-oss in particular) occasionally emit an internal
+        tool-call format instead of plain text, even with no tools
+        registered, which Groq rejects with a 400 "tool_use_failed" /
+        "Tool choice is none, but model called a tool" error. This is
+        intermittent model behaviour, not a logic bug, so it's worth a
+        couple of quick retries before giving up.
         """
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2,
-                max_tokens=max_tokens
-            )
+        last_error = None
 
-            content = response.choices[0].message.content
-            return content.strip() if content else ""
+        for attempt in range(retries + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=max_tokens
+                )
 
-        except Exception as error:
-            error_message = str(error).lower()
-            print(f"Research Agent Error: {error}")
+                content = response.choices[0].message.content
+                return content.strip() if content else ""
 
-            if "429" in error_message or "rate limit" in error_message:
-                raise RuntimeError(
-                    "The AI service is busy right now. "
-                    "Please wait a moment and try again."
-                ) from error
+            except Exception as error:
+                last_error = error
+                error_message = str(error).lower()
 
-            if (
-                "401" in error_message
-                or "authentication" in error_message
-                or "invalid api key" in error_message
-            ):
-                raise RuntimeError(
-                    "The AI service could not be authenticated. "
-                    "Please check the API configuration."
-                ) from error
+                if "tool_use_failed" in error_message or "tool choice is none" in error_message:
+                    print(
+                        f"Research Agent: transient tool-call glitch from the model "
+                        f"(attempt {attempt + 1}/{retries + 1}), retrying..."
+                    )
+                    continue
 
-            if (
-                "connection" in error_message
-                or "timeout" in error_message
-                or "network" in error_message
-            ):
-                raise RuntimeError(
-                    "A network problem prevented the research request. "
-                    "Please check your connection and try again."
-                ) from error
+                # Any other error is not worth retrying -- fall through to
+                # the normal error handling below immediately.
+                break
 
+        error = last_error
+        error_message = str(error).lower()
+        print(f"Research Agent Error: {error}")
+
+        if "429" in error_message or "rate limit" in error_message:
             raise RuntimeError(
-                "The Research Agent could not complete that request right now. "
-                "Please try again."
+                "The AI service is busy right now. "
+                "Please wait a moment and try again."
             ) from error
+
+        if (
+            "401" in error_message
+            or "authentication" in error_message
+            or "invalid api key" in error_message
+        ):
+            raise RuntimeError(
+                "The AI service could not be authenticated. "
+                "Please check the API configuration."
+            ) from error
+
+        if (
+            "connection" in error_message
+            or "timeout" in error_message
+            or "network" in error_message
+        ):
+            raise RuntimeError(
+                "A network problem prevented the research request. "
+                "Please check your connection and try again."
+            ) from error
+
+        raise RuntimeError(
+            "The Research Agent could not complete that request right now. "
+            "Please try again."
+        ) from error
 
     # =====================================================
     # REACT LOOP

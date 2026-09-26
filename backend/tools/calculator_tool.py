@@ -76,6 +76,39 @@ class CalculatorTool:
             return "Error: Empty expression."
 
         # ----------------------------------------------------
+        # Handle natural-language "average/sum of N, N, ..." phrasing
+        # before the strict math-only check below, since these show up
+        # often (e.g. "Calculate the average of 10, 20, and 30") but
+        # aren't valid arithmetic expressions on their own.
+        # ----------------------------------------------------
+
+        average_match = re.search(
+            r"average\s+of\s+([0-9,\s.]+?and[0-9,\s.]*[0-9]|[0-9,\s.]+[0-9])",
+            expression,
+            flags=re.IGNORECASE
+        )
+
+        if average_match:
+            numbers = re.findall(r"-?\d+(?:\.\d+)?", average_match.group(1))
+
+            if numbers:
+                numbers = [float(n) for n in numbers]
+                expression = f"({'+'.join(str(n) for n in numbers)})/{len(numbers)}"
+
+        else:
+            sum_match = re.search(
+                r"sum\s+of\s+([0-9,\s.]+?and[0-9,\s.]*[0-9]|[0-9,\s.]+[0-9])",
+                expression,
+                flags=re.IGNORECASE
+            )
+
+            if sum_match:
+                numbers = re.findall(r"-?\d+(?:\.\d+)?", sum_match.group(1))
+
+                if numbers:
+                    expression = "+".join(numbers)
+
+        # ----------------------------------------------------
         # Remove common question prefixes
         # ----------------------------------------------------
 

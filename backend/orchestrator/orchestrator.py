@@ -860,7 +860,7 @@ class Orchestrator(
 
                 self.execute_single_agent(
 
-                    context_question,
+                    question if agent_name == "CALCULATOR" else context_question,
 
                     agent_name
 

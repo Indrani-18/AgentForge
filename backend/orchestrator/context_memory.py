@@ -47,136 +47,44 @@ class ContextMemoryMixin:
     """
 
     def build_context(self, question):
-
         """
-
         Build context using previous conversation history.
-
         """
-
-
 
         if not self.memory:
-
             return question
 
-
-
         try:
+            previous_context = self.memory.get_context(limit=10)
 
-            previous_messages = (
-
-                self.memory.get_recent_messages(
-
-                    limit=10
-
-                )
-
-            )
-
-
-
-            if not previous_messages:
-
+            if not previous_context or previous_context == "No previous conversation.":
                 return question
 
-
-
-            context = ""
-
-
-
-            for message in previous_messages:
-
-                context += f"{message}\n"
-
-
-
-            context += (
-
-                f"\nCurrent Question:\n{question}"
-
-            )
-
-
-
-            return context
-
-
+            return f"{previous_context}\n\nCurrent Question:\n{question}"
 
         except Exception as error:
-
-
-
-            print(
-
-                f"Memory context error: {error}"
-
-            )
-
-
-
+            print(f"Memory context error: {error}")
             return question
 
-
-
     # =========================================================
-
     # SAVE CONVERSATION
-
     # =========================================================
-
-
 
     def save_conversation(self, question, answer):
-
         """
-
         Save user question and final answer.
-
         """
-
-
 
         if not self.memory:
-
             return
 
-
-
         try:
-
-
-
-            self.memory.add_message(
-
-                role="user",
-
-                content=question
-
-            )
-
-
-
-            self.memory.add_message(
-
-                role="assistant",
-
-                content=answer
-
-            )
-
-
+            self.memory.add_user_message(question)
+            self.memory.add_assistant_message(answer)
 
         except Exception as error:
+            print(f"Memory save error: {error}")
 
-
-
-            print(
-
-                f"Memory save error: {error}"
-
-            )
 
 
 
